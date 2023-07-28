@@ -8,17 +8,46 @@ import threading
 import traceback
 
 # %%
+GLOBAL_STOP_FLAG = False
 
 
 def read_and_forward_thread_function(
     read_socket: socket.socket,
     forward_socket: socket.socket,
 ):
+    global GLOBAL_STOP_FLAG
+    try:
+        if os.path.exists('stop'):
+            return
+
+        if GLOBAL_STOP_FLAG:
+            return
+
+        bs = read_socket.recv(1024)
+        if len(bs) == 0:
+            return
+
+        if len(bs) >= 4:
+            if bs[0:4] == b'stop':
+                print('stop command received', flush=True)
+                GLOBAL_STOP_FLAG = True
+                return
+
+        forward_socket.sendall(bs)
+    except Exception as ex:
+        stacktrace = traceback.format_exc()
+        print(ex, flush=True)
+        print(stacktrace, flush=True)
+
     while True:
         try:
             if os.path.exists('stop'):
                 break
 
+            if GLOBAL_STOP_FLAG:
+                break
+
+            # TODO split into 2 threads
             bs = read_socket.recv(1024)
             if len(bs) == 0:
                 break
@@ -91,27 +120,31 @@ print(time.time_ns(), f'Listening on  {local_ipv4_str}:{local_port}')
 server_socket.listen()
 
 while True:
-    if os.path.exists('stop'):
+    try:
+        if os.path.exists('stop'):
+            break
+
+        print(time.time_ns(), 'Waiting for client to connect')
+        client_socket, address = server_socket.accept()
+        print(f'Accepted connection from {address}')
+        input_dict = {
+            'client_socket': client_socket,
+            'address': address,
+            'destination_ip': destination_ip,
+            'destination_port': destination_port,
+        }
+
+        client_thread = threading.Thread(target=handle_client, args=(input_dict, ))
+        client_thread.start()
+    except Exception as ex:
+        stacktrace = traceback.format_exc()
+        print(ex, flush=True)
+        print(stacktrace, flush=True)
+        GLOBAL_STOP_FLAG = True
         break
 
-    print(time.time_ns(), 'Waiting for client to connect')
-    client_socket, address = server_socket.accept()
-    print(f'Accepted connection from {address}')
-    input_dict = {
-        'client_socket': client_socket,
-        'address': address,
-        'destination_ip': destination_ip,
-        'destination_port': destination_port,
-    }
-
-    client_thread = threading.Thread(target=handle_client, args=(input_dict, ))
-    client_thread.start()
     # ts = time.time_ns()
     # handle_client_thread_list.append({
     #     'thread': client_thread,
     #     'time_ns': ts,
     # })
-
-'''
-py tunnel_tcp_connections.py 20001 192.168.0.11 10001
-'''
