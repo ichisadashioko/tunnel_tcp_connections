@@ -20,6 +20,10 @@ def read_and_forward_thread_function(
         if os.path.exists('stop'):
             return
 
+        if os.path.exists(stop_filepath):
+            GLOBAL_STOP_FLAG = True
+            return
+
         if GLOBAL_STOP_FLAG:
             return
 
@@ -42,6 +46,10 @@ def read_and_forward_thread_function(
     while True:
         try:
             if os.path.exists('stop'):
+                break
+
+            if os.path.exists(stop_filepath):
+                GLOBAL_STOP_FLAG = True
                 break
 
             if GLOBAL_STOP_FLAG:
@@ -113,18 +121,28 @@ local_port = args.local_port
 destination_ip = args.remote_ip
 destination_port = args.remote_port
 
+stop_filepath = f'stop_{local_port}'
+if os.path.exists(stop_filepath):
+    os.remove(stop_filepath)
+
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 server_socket.bind((local_ipv4_str, local_port))
 print(time.time_ns(), f'Listening on  {local_ipv4_str}:{local_port}')
 server_socket.listen()
 
+
 while True:
     try:
         if os.path.exists('stop'):
             break
 
+        if os.path.exists(stop_filepath):
+            GLOBAL_STOP_FLAG = True
+            break
+
         print(time.time_ns(), 'Waiting for client to connect')
+        print(f'create {stop_filepath} to stop the tunnel')
         client_socket, address = server_socket.accept()
         print(f'Accepted connection from {address}')
         input_dict = {
@@ -148,3 +166,5 @@ while True:
     #     'thread': client_thread,
     #     'time_ns': ts,
     # })
+
+print(time.time_ns(), f'main thread finished', flush=True)
