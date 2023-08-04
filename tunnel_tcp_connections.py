@@ -8,6 +8,11 @@ import threading
 import traceback
 
 # %%
+RS = '\033[0m'
+R = '\033[91m'
+G = '\033[92m'
+Y = '\033[93m'
+# %%
 GLOBAL_STOP_FLAG = False
 
 
@@ -77,28 +82,42 @@ def handle_client(input_dict: dict):
             destination_ip = input_dict['destination_ip']
             destination_port = input_dict['destination_port']
 
-            tunnel_client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            tunnel_client_socket.connect((destination_ip, destination_port))
-
+            tunnel_client_socket = None
             try:
-                thread1 = threading.Thread(target=read_and_forward_thread_function, args=(client_socket, tunnel_client_socket,))
-                thread1.start()
-
-                thread2 = threading.Thread(target=read_and_forward_thread_function, args=(tunnel_client_socket, client_socket, ))
-                thread2.start()
-
-                thread1.join()
-                thread2.join()
+                tunnel_client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                tunnel_client_socket.settimeout(5)
+                tunnel_client_socket.connect((destination_ip, destination_port))
+                # put back to default blocking behavior - TODO
+                tunnel_client_socket.settimeout(None)
             except Exception as ex:
                 stacktrace = traceback.format_exc()
-                print(ex, flush=True)
-                print(stacktrace, flush=True)
+                print(f'{Y}{ex}{RS}', flush=True)
+                print(f'{R}{stacktrace}{RS}', flush=True)
+                print(f'{Y}failed to connect to tunnel destination{RS} - {R}{destination_ip}{RS}:{G}{destination_port}{RS}', flush=True)
 
-            tunnel_client_socket.close()
+                tunnel_client_socket = None
+
+            if tunnel_client_socket is not None:
+                try:
+                    thread1 = threading.Thread(target=read_and_forward_thread_function, args=(client_socket, tunnel_client_socket,))
+                    thread1.start()
+
+                    thread2 = threading.Thread(target=read_and_forward_thread_function, args=(tunnel_client_socket, client_socket, ))
+                    thread2.start()
+
+                    thread1.join()
+                    thread2.join()
+                except Exception as ex:
+                    stacktrace = traceback.format_exc()
+                    print(ex, flush=True)
+                    print(stacktrace, flush=True)
+
+                tunnel_client_socket.close()
         except Exception as ex:
             stacktrace = traceback.format_exc()
             print(ex, flush=True)
             print(stacktrace, flush=True)
+
         client_socket.close()
     except Exception as ex:
         stacktrace = traceback.format_exc()
@@ -131,6 +150,10 @@ server_socket.bind((local_ipv4_str, local_port))
 print(time.time_ns(), f'Listening on  {local_ipv4_str}:{local_port}')
 server_socket.listen()
 
+# instance_prefix = f'{local_ipv4_str}:{local_port} -> {destination_ip}:{destination_port}'
+instance_prefix = f'{R}{local_ipv4_str}:{local_port}{RS} -> {G}{destination_ip}:{destination_port}{RS}'
+
+accepted_connection_count = 0
 
 while True:
     try:
@@ -141,9 +164,13 @@ while True:
             GLOBAL_STOP_FLAG = True
             break
 
-        print(time.time_ns(), 'Waiting for client to connect')
-        print(f'create {stop_filepath} to stop the tunnel')
+        if GLOBAL_STOP_FLAG:
+            break
+
+        print(time.time_ns(), instance_prefix, f'accepted_connection_count {G}{accepted_connection_count}{RS}')
+        print(f'create {R}{stop_filepath}{RS} to stop the tunnel')
         client_socket, address = server_socket.accept()
+        accepted_connection_count += 1
         print(f'Accepted connection from {address}')
         input_dict = {
             'client_socket': client_socket,
